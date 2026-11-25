@@ -1109,7 +1109,7 @@ function genResult(job, r, d) {
 }
 function serverErrText(e) {
   switch (e && e.code) {
-    case 'not_logged_in': return "Claude n'est pas connecté sur le serveur : lance « Connecter Claude au serveur » sur ton PC.";
+    case 'not_logged_in': return "Le robot n'est pas encore connecté à ton compte Claude. Sur ton PC, double-clique sur « Connecter Claude au serveur.cmd » (dossier Révision), puis touche Réessayer.";
     case 'rate_limited': return e.reason === 'usage_limit' ? "Limite d'utilisation de ton abonnement Claude atteinte. Réessaie un peu plus tard." : 'Claude est très demandé en ce moment. Réessaie dans quelques minutes.';
     case 'invalid_json': return "La réponse de Claude est arrivée incomplète. Réessaie.";
     case 'prompt_too_large': return 'Ce cours est trop long pour une seule demande. Découpe-le en plusieurs documents.';
@@ -1149,7 +1149,7 @@ const ONLINEAPI = (() => {
   addEventListener('hashchange', () => { if (takeHash()) location.reload(); });
   let TOKEN = readToken();
 
-  const status = { paired: !!TOKEN, online: navigator.onLine !== false, synced: false, lastSync: 0, pendingWrites: 0, jobs: 0, error: '' };
+  const status = { paired: !!TOKEN, online: navigator.onLine !== false, synced: false, lastSync: 0, pendingWrites: 0, jobs: 0, error: '', writeError: null };
   const subs = new Set();
   const emit = () => { status.pendingWrites = [...pending.keys()].filter(k => !k.startsWith('@')).length; status.jobs = waiting.size; subs.forEach(f => { try { f(status); } catch (e) { console.error(e); } }); };
 
@@ -1166,10 +1166,11 @@ const ONLINEAPI = (() => {
     if (r.status === 304) return { notModified: true };
     let j = null; try { j = r.status === 204 ? null : await r.json(); } catch {}
     if (r.status === 401) { status.paired = false; status.error = 'auth'; emit(); throw { code: 'not_paired' }; }
-    if (r.status === 403 && /rate limit/i.test((j && j.message) || '')) throw { code: 'rate_limited' };
-    if (r.status === 403 || r.status === 404) throw { code: r.status === 404 ? 'not_found' : 'forbidden', message: j && j.message };
-    if (r.status === 409 || r.status === 422) throw { code: 'conflict', message: j && j.message };
-    if (!r.ok) throw { code: 'unavailable', message: 'HTTP ' + r.status };
+    const why = (j && j.message) || '';
+    if (r.status === 429 || (r.status === 403 && /rate limit/i.test(why))) throw { code: 'rate_limited', http: r.status, message: why };
+    if (r.status === 403 || r.status === 404) throw { code: r.status === 404 ? 'not_found' : 'forbidden', http: r.status, message: why };
+    if (r.status === 409 || r.status === 422) throw { code: 'conflict', http: r.status, message: why };
+    if (!r.ok) throw { code: 'unavailable', http: r.status, message: 'HTTP ' + r.status + (why ? ' ' + why : '') };
     if (j && typeof j === 'object') Object.defineProperty(j, '_etag', { value: r.headers.get('ETag') });
     return j;
   }
@@ -1265,10 +1266,15 @@ const ONLINEAPI = (() => {
   function scheduleFlush(ms) {
     clearTimeout(flushTimer);
     const wait = ms != null ? ms : Math.max(1500, 8000 - (Date.now() - lastFlush));
-    flushTimer = setTimeout(() => exclusive(flush), wait);
+    flushTimer = setTimeout(() => exclusive(flush).catch(() => {}), wait);
   }
+  /* GitHub refuse parfois une écriture juste après une autre (réplication, surcharge) : on réessaie, en relisant l'état du dépôt */
+  const TRANSIENT = new Set(['conflict', 'unavailable', 'not_found', 'rate_limited']);
+  const pause = ms => new Promise(r => setTimeout(r, ms));
   async function commitFiles(files, message) {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    let last = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (attempt > 1) await pause(Math.min(8000, 700 * 2 ** (attempt - 1)));
       if (!headSha || attempt > 0) {
         const ref = await gh('GET', 'git/ref/heads/' + GH.branch);
         if (ref.object.sha !== headSha) {
@@ -1290,9 +1296,9 @@ const ONLINEAPI = (() => {
         headSha = c.sha; treeSha = t.sha; refEtag = null;
         for (const f of files) { if (f.content === null) remote.delete(f.path); else remote.set(f.path, f.sha); }
         return;
-      } catch (e) { if (e.code !== 'conflict') throw e; }
+      } catch (e) { if (!TRANSIENT.has(e.code)) throw e; last = e; console.warn('écriture GitHub, nouvel essai', attempt + 1, e); }
     }
-    throw { code: 'conflict' };
+    throw last || { code: 'conflict' };
   }
   async function flush() {
     if (!pending.size || !TOKEN) return;
@@ -1302,7 +1308,7 @@ const ONLINEAPI = (() => {
     const msg = jobsIn ? 'Demande pour Claude' : 'Révision : ' + (files.length > 1 ? files.length + ' changements' : files[0].key.split('/')[0]);
     try {
       await commitFiles(files, msg);
-      lastFlush = Date.now();
+      lastFlush = Date.now(); status.writeError = null; if (status.error !== 'repo') status.error = '';
       for (const f of files) {
         if (pending.get(f.key) !== f.v) continue;
         pending.delete(f.key); idb.del('pending', f.key);
@@ -1311,7 +1317,7 @@ const ONLINEAPI = (() => {
         else { shas.set(f.key, f.sha); if (!isSrc(f.key)) idb.put('files', f.key, { sha: f.sha, data: f.v.data }); }
       }
     } catch (e) {
-      if (e.code !== 'offline') { console.warn('envoi', e); status.error = e.code || 'write'; }
+      if (e.code !== 'offline') { console.warn('envoi', e); status.error = e.code || 'write'; status.writeError = { code: e.code || 'write', http: e.http, message: e.message || String(e), at: Date.now() }; }
       scheduleFlush(e.code === 'offline' ? 20000 : 10000);
       throw e;
     } finally { emit(); }
@@ -1381,7 +1387,12 @@ const ONLINEAPI = (() => {
     if (images && images.length) body.images = await Promise.all(images.map(toImage));
     queue('@demandes/' + id, 'set', body);
     clearTimeout(flushTimer);
-    try { await exclusive(flush); } catch (e) { if (req.kind !== 'gen' || e.code !== 'offline') { if (req.kind !== 'gen') { pending.delete('@demandes/' + id); idb.del('pending', '@demandes/' + id); } throw e; } }
+    try { await exclusive(flush); }
+    catch (e) {
+      /* Un travail de document reste en file : il partira au prochain envoi (automatique), l'appli n'affiche pas d'erreur */
+      if (req.kind === 'gen' && e.code !== 'not_paired') console.warn('demande en attente d’envoi', id, e);
+      else { pending.delete('@demandes/' + id); idb.del('pending', '@demandes/' + id); throw e; }
+    }
     pollSoon();
     return id;
   }
@@ -1836,7 +1847,7 @@ function claudeErr(e) {
     case 'no_cli': return "Claude Code est introuvable sur le PC. Ouvre l'appli Claude pour ordinateur une fois, ou installe Claude Code, puis relance Révision.";
     case 'timeout': return "Claude a mis trop de temps à répondre. Réessaie, éventuellement avec un cours plus court.";
     case 'upstream_error': return "Claude n'a pas pu répondre" + (e.message ? ' (' + String(e.message).slice(0, 140) + ')' : '') + '. Réessaie.';
-    default: return "Claude n'a pas pu répondre (souci de connexion). Réessaie.";
+    default: return "Claude n'a pas pu répondre (souci de connexion" + (e && e.code ? ' : ' + e.code + (e.http ? ' ' + e.http : '') : e && e.message ? ' : ' + String(e.message).slice(0, 80) : '') + '). Réessaie.';
   }
 }
 function P_CORRECT(ex, answer) {
@@ -3725,6 +3736,7 @@ function onlineBanner() {
   if (s.error === 'repo' || s.error === 'forbidden') return ban('bulb', 'Le dépôt de données est introuvable, ou ce code d’accès ne peut pas y écrire. Vérifie le code dans Réglages › Appareils.', h('button', { class: 'btn soft sm', onclick: openPairing }, 'Changer'));
   if (!s.online) return ban('cloud', 'Hors ligne : tu peux réviser normalement, tes changements partiront dès que la connexion revient.' + (s.pendingWrites ? ' (' + plural(s.pendingWrites, 'changement') + ' en attente)' : ''));
   if (s.error === 'rate_limited') return ban('clock', 'GitHub limite les échanges pour quelques minutes : tes changements sont gardés et partiront ensuite.');
+  if (s.pendingWrites && s.writeError) return ban('clock', `GitHub n’a pas accepté le dernier envoi (${s.writeError.code}${s.writeError.http ? ' ' + s.writeError.http : ''}). ${plural(s.pendingWrites, 'changement')} gardé${s.pendingWrites > 1 ? 's' : ''} sur cet appareil, nouvel essai automatique dans quelques secondes.`);
   return null;
 }
 /* Formulaire de liaison (accueil d'un appareil pas encore relié, et fenêtre « Relier ») */
