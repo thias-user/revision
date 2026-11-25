@@ -424,6 +424,11 @@ select.inp{height:46px;border:0;border-radius:14px;background:var(--pill);paddin
 .qr-box .lnk{flex:1;min-width:200px;font-size:13px;overflow-wrap:anywhere}
 .qr-box .lnk code{display:block;background:var(--card);border-radius:10px;padding:8px 10px;margin:6px 0 10px;font-size:12.5px;user-select:all}
 .steps{margin:10px 0 0;padding-left:1.2em;color:var(--text);font-size:14px;line-height:1.55}
+.steps li + li{margin-top:8px}
+.setup-card{background:var(--card);border-radius:24px;padding:20px 20px 18px;margin:4px 0 18px;max-width:640px}
+.setup-head{display:flex;align-items:center;gap:10px;margin:0 0 8px}
+.setup-head h3{margin:0;font:600 18px var(--f-ui)}
+.setup-head svg{flex:none}
 .icon-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:8px}
 .icon-pick button{height:46px;border-radius:12px;border:0;background:var(--pill);color:var(--text);display:grid;place-items:center}
 .icon-pick button[aria-pressed="true"]{background:var(--accent);color:var(--on)}
@@ -1998,6 +2003,7 @@ function pageContent(s) {
   const inner = h('div', { class: 'page-inner wrap' });
   const docs = docsIn(s.id);
   inner.append(h('div', { class: 'page-title' }, h('h2', null, s.name), h('span', { class: 'count' }, docs.length ? plural(docs.length, 'document') : '')));
+  if (ONLINE && !ONLINEAPI.status.paired) { inner.append(onlineSetup()); return inner; }
   if (LOCAL || ONLINE) { const lb = LOCAL ? localBanner() : onlineBanner(); if (lb) inner.append(lb); }
   if (!S.loaded.docs && !S.local) {
     inner.append(h('div', { class: 'doc-list', 'aria-busy': 'true' }, [0, 1].map(() => h('div', { class: 'dcard' }, h('div', null, h('div', { class: 'skel', style: 'width:70%;height:18px' }), h('div', { class: 'skel', style: 'width:92%' }), h('div', { class: 'skel', style: 'width:40%' })), h('div', { class: 'thumb', style: 'background:var(--pill)' })))));
@@ -3715,30 +3721,54 @@ ONLINEAPI.onStatus(s => { const g = [s.paired, s.online, s.synced, s.error, s.pe
 function onlineBanner() {
   const s = ONLINEAPI.status;
   const ban = (ic, text, btn) => h('div', { class: 'banner', style: 'margin:0 0 14px' }, icon(ic), h('span', { style: 'flex:1' }, text), btn || null);
-  if (!s.paired) return ban('link', s.error === 'auth' ? 'Le code d’accès de cet appareil n’est plus valable. Relie-le de nouveau.' : 'Relie cet appareil à tes données Révision pour retrouver tes fiches partout.', h('button', { class: 'btn sm', onclick: openPairing }, 'Relier'));
+  if (!s.paired) return null; // l'accueil affiche onlineSetup() à la place
   if (s.error === 'repo' || s.error === 'forbidden') return ban('bulb', 'Le dépôt de données est introuvable, ou ce code d’accès ne peut pas y écrire. Vérifie le code dans Réglages › Appareils.', h('button', { class: 'btn soft sm', onclick: openPairing }, 'Changer'));
   if (!s.online) return ban('cloud', 'Hors ligne : tu peux réviser normalement, tes changements partiront dès que la connexion revient.' + (s.pendingWrites ? ' (' + plural(s.pendingWrites, 'changement') + ' en attente)' : ''));
   if (s.error === 'rate_limited') return ban('clock', 'GitHub limite les échanges pour quelques minutes : tes changements sont gardés et partiront ensuite.');
   return null;
 }
-function openPairing() {
-  const inp = h('textarea', { class: 'inp', rows: 3, placeholder: 'Colle ici ton code d’accès GitHub (il commence par github_pat_) ou ton lien d’appairage', 'aria-label': 'Code d’accès GitHub' });
+/* Formulaire de liaison (accueil d'un appareil pas encore relié, et fenêtre « Relier ») */
+function pairForm() {
+  const inp = h('textarea', { class: 'inp', rows: 2, placeholder: 'Colle ici ton code d’accès (github_pat_…) ou un lien d’appairage', 'aria-label': 'Code d’accès GitHub', autocomplete: 'off', spellcheck: 'false' });
   const err = h('p', { class: 'small', style: 'color:#C2523C;margin:8px 0 0', hidden: true });
-  const go = async btn => {
+  const fail = t => { err.hidden = false; err.textContent = t; };
+  const btn = h('button', { class: 'btn', onclick: () => go() }, 'Relier cet appareil');
+  const go = async () => {
     let v = inp.value.trim(); const m = v.match(/[#&]t=([\w-]{20,})/); if (m) v = m[1];
-    if (!/^[\w-]{20,}$/.test(v)) { err.hidden = false; err.textContent = 'Ce n’est pas un code d’accès valable.'; return; }
-    btn.disabled = true; err.hidden = true;
-    try { await ONLINEAPI.pair(v); toast('Appareil relié : chargement de tes données…'); setTimeout(() => location.reload(), 600); }
-    catch (e) { btn.disabled = false; err.hidden = false; err.textContent = e.code === 'not_paired' ? 'GitHub refuse ce code (faute de frappe, ou code expiré).' : e.code === 'not_found' || e.code === 'forbidden' ? `Ce code n’a pas accès en écriture au dépôt ${GH.owner}/${GH.repo}.` : e.code === 'offline' ? 'Pas de connexion internet.' : 'Vérification impossible pour le moment. Réessaie.'; }
+    if (!v) return fail('Colle d’abord ton code d’accès dans la case.');
+    if (/^sk-ant-/.test(v)) return fail('Ça, c’est le jeton Claude du robot : il va dans « Connecter Claude au serveur.cmd ». Ici, il faut le code d’accès GitHub (github_pat_…).');
+    if (!/^[\w-]{20,}$/.test(v)) return fail('Ce n’est pas un code d’accès GitHub : il commence par github_pat_ et ne contient pas d’espace.');
+    btn.disabled = true; btn.textContent = 'Vérification…'; err.hidden = true;
+    try { await ONLINEAPI.pair(v); toast('Appareil relié : chargement de tes cours…'); setTimeout(() => location.reload(), 600); }
+    catch (e) {
+      btn.disabled = false; btn.textContent = 'Relier cet appareil';
+      fail(e.code === 'not_paired' ? 'GitHub refuse ce code : il est incomplet, mal copié ou supprimé. Recopie-le en entier.'
+        : e.code === 'not_found' || e.code === 'forbidden' ? `Ce code ne voit pas ton dépôt « ${GH.repo} ». Recrée-le en choisissant bien « Only select repositories » › ${GH.repo}, avec « Contents : Read and write ».`
+        : e.code === 'offline' ? 'Pas de connexion internet.' : 'Vérification impossible pour le moment. Réessaie dans une minute.');
+    }
   };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
+  return h('div', null,
+    h('ol', { class: 'steps', style: 'margin:0 0 14px' },
+      h('li', null, h('b', null, 'Crée ton code d’accès sur GitHub'), ' (une seule fois) : la page s’ouvre déjà remplie. Sous « Repository access », choisis « Only select repositories » puis ', h('b', null, GH.repo), '. Descends tout en bas et clique sur « Generate token », puis copie le code affiché.',
+        h('div', { class: 'row', style: 'margin:8px 0 6px' }, h('a', { class: 'btn soft sm', href: TOKEN_URL, target: '_blank', rel: 'noopener', style: 'text-decoration:none' }, icon('link'), 'Créer le code sur GitHub'))),
+      h('li', null, h('b', null, 'Colle-le ici'), ' puis touche « Relier cet appareil ». Cet appareil s’en souviendra.')),
+    h('div', { class: 'fld', style: 'margin-bottom:10px' }, inp, err),
+    h('div', { class: 'row end' }, btn),
+    h('p', { class: 'small', style: 'margin:14px 0 0;color:var(--text2)' }, 'Tes autres appareils n’ont pas besoin de code : sur un appareil déjà relié, Réglages › Appareils affiche un QR code qui les relie d’un coup.'));
+}
+/* À la place des cours tant que l'appareil n'est pas relié */
+function onlineSetup() {
+  const expired = ONLINEAPI.status.error === 'auth';
+  return h('div', { class: 'setup-card' },
+    h('div', { class: 'setup-head' }, icon('cloud'), h('h3', null, expired ? 'Le code d’accès de cet appareil n’est plus valable' : 'Relie cet appareil à tes cours')),
+    h('p', { class: 'small', style: 'margin:0 0 14px' }, `Tes cours sont bien à l’abri dans ton dépôt GitHub privé « ${GH.repo} ». Pour les afficher ici, cet appareil a besoin d’un code d’accès${expired ? ' valable' : ''}.`),
+    pairForm());
+}
+function openPairing() {
   openSheet({ title: 'Relier cet appareil', body: h('div', null,
     h('p', { class: 'small', style: 'margin:0 0 12px' }, `Tes fiches, cartes et progrès sont rangés dans ton dépôt GitHub privé « ${GH.repo} ». Chaque appareil y accède avec un code d’accès.`),
-    h('ol', { class: 'steps' },
-      h('li', null, 'Sur un appareil déjà relié : Réglages › Appareils › scanne le QR code, c’est tout.'),
-      h('li', null, 'Sinon, crée le code une fois sur GitHub (bouton ci-dessous) : « Only select repositories » › ', h('b', null, GH.repo), ', permission « Contents : Read and write », puis « Generate token ». Copie-le et colle-le ici.')),
-    h('div', { class: 'row', style: 'margin:4px 0 12px' }, h('a', { class: 'btn soft sm', href: TOKEN_URL, target: '_blank', rel: 'noopener', style: 'text-decoration:none' }, icon('link'), 'Créer le code sur GitHub')),
-    h('div', { class: 'fld' }, inp, err),
-    h('div', { class: 'row end' }, h('button', { class: 'btn', onclick: e => go(e.currentTarget) }, 'Relier cet appareil'))) });
+    pairForm()) });
 }
 
 /* Paquets déposés dans d/inbox (par Claude Code ou par toi) */
