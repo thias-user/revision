@@ -199,13 +199,21 @@ button{cursor:pointer}
 .dv-body{max-width:760px;margin:0 auto;padding:26px var(--gut-r) calc(var(--safe-b) + 130px) var(--gut-l);box-sizing:border-box}
 .dv-title{font:650 clamp(29px,6.4vw,42px)/1.06 var(--f-retro);font-variation-settings:"SOFT" 100,"WONK" 1;margin:0;letter-spacing:-.012em;text-wrap:balance;overflow-wrap:anywhere}
 .dv-sub{color:var(--text2);margin-top:8px;font-size:15px}
-.dv-info{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-top:18px}
+.dv-info{position:sticky;top:calc(var(--safe-t) + 74px);z-index:4;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:12px -8px 0;padding:6px 8px;border-radius:999px;transition:background-color .25s,box-shadow .25s}
+.dv-info.stuck{background:color-mix(in srgb,var(--card) 88%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:var(--shadow-lg)}
+.dv-info .opt{margin-left:auto}
+.dv-shade{position:absolute;left:0;right:0;top:0;height:calc(var(--safe-t) + 136px);z-index:3;pointer-events:none;background:linear-gradient(to bottom,var(--bg) 72%,color-mix(in srgb,var(--bg) 0%,transparent));opacity:0;transition:opacity .2s}
+.dv.info-stuck .dv-shade{opacity:1}
 .prog{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-variant-numeric:tabular-nums}
 .prog svg{width:30px;height:30px;transform:rotate(-90deg)}
 .pill-sel{display:inline-flex;align-items:center;background:var(--pill);border-radius:999px;height:40px;padding:0 4px;gap:2px;max-width:100%}
 .pill-sel button{width:32px;height:32px;border-radius:50%;border:0;background:transparent;color:var(--text);display:grid;place-items:center;flex:none}
 .pill-sel button:disabled{opacity:.3}
-.pill-sel span{padding:0 6px;font:500 14px var(--f-ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.pill-sel .pt-toc{width:auto;border-radius:999px;display:inline-flex;align-items:center;gap:3px;padding:0 6px 0 8px;font:500 14px var(--f-ui);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill-sel .pt-toc:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}
+.pt-toc .ic{width:16px;height:16px;color:var(--text2)}
+.pt-short{display:none}
+@media (max-width:480px){.dv-info{flex-wrap:nowrap;gap:6px}.dv-info .lbl-long,.pt-long{display:none}.pt-short{display:inline}.dv-info .opt{width:40px;padding:0;justify-content:center}}
 .pill-btn{height:40px;padding:0 15px;border-radius:999px;border:0;background:var(--pill);color:var(--text);display:inline-flex;align-items:center;gap:6px;font:500 14px var(--f-ui)}
 .sec-h{font:600 21px/1.2 var(--f-retro);font-variation-settings:"SOFT" 100;margin:30px 0 10px}
 .about{font-size:16px;line-height:1.62;margin:0;max-width:62ch}
@@ -434,12 +442,12 @@ select.inp{height:46px;border:0;border-radius:14px;background:var(--pill);paddin
 .icon-pick button[aria-pressed="true"]{background:var(--accent);color:var(--on)}
 
 .menu-scrim{position:absolute;inset:0;z-index:69}
-.menu{position:absolute;z-index:70;min-width:228px;background:var(--card);color:var(--text);border-radius:18px;box-shadow:var(--shadow-lg);padding:6px;transform-origin:top left;transform:scale(.85);opacity:0;transition:transform .35s var(--ease),opacity .2s}
+.menu{position:absolute;z-index:70;min-width:228px;max-width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow-y:auto;box-sizing:border-box;background:var(--card);color:var(--text);border-radius:18px;box-shadow:var(--shadow-lg);padding:6px;transform-origin:top left;transform:scale(.85);opacity:0;transition:transform .35s var(--ease),opacity .2s}
 .menu.open{transform:none;opacity:1}
-.menu button{display:flex;align-items:center;gap:12px;width:100%;height:44px;border:0;border-radius:12px;background:transparent;color:var(--text);padding:0 12px;font:400 15px var(--f-ui);text-align:left}
+.menu button{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;border:0;border-radius:12px;background:transparent;color:var(--text);padding:9px 12px;font:400 15px/1.3 var(--f-ui);text-align:left}
 .menu button:hover,.menu button:focus-visible{background:var(--pill)}
 .menu .sep{height:1px;background:var(--hair);margin:4px 8px}
-.menu .ic{width:19px;height:19px;color:var(--text2)}
+.menu .ic{width:19px;height:19px;color:var(--text2);flex:none}
 
 .folder-ov{position:absolute;inset:0;z-index:15;background:color-mix(in srgb,var(--bg) 45%,transparent);-webkit-backdrop-filter:blur(22px) saturate(1.3);backdrop-filter:blur(22px) saturate(1.3);opacity:0;transition:opacity .3s}
 .folder-ov.open{opacity:1}
@@ -2459,10 +2467,11 @@ function openDoc(id, fromEl, opt = {}) {
   const bar = h('div', { class: 'dv-bar', 'aria-hidden': 'true' }, h('div', { class: 't' }, d.title));
   const fav = h('button', { class: 'dv-btn fav', onclick: () => toggleFav(id) });
   const cta = h('div', { class: 'cta-bar' });
-  root.append(scroll, bar, h('button', { class: 'dv-btn back', 'aria-label': 'Fermer le document', onclick: () => closeDoc() }, icon('back')), fav, cta);
+  const shade = h('div', { class: 'dv-shade', 'aria-hidden': 'true' });
+  root.append(scroll, shade, bar, h('button', { class: 'dv-btn back', 'aria-label': 'Fermer le document', onclick: () => closeDoc() }, icon('back')), fav, cta);
   OV.append(root);
   const defTab = opt.tab || (d.kind === 'phrases' || (d.kind === 'deck' && !(d.sections || []).length) ? 'cards' : 'sheet');
-  const c = D.cur = { id, root, scroll, head, coverWrap, ini, body, bar, fav, cta, fromEl, tab: defTab, chapter: 0, st: { quiz: null, rev: new Set(), ans: {}, corr: {}, open: new Set(), more: 0 } };
+  const c = D.cur = { id, root, scroll, shade, head, coverWrap, ini, body, bar, fav, cta, fromEl, tab: defTab, chapter: 0, st: { quiz: null, rev: new Set(), ans: {}, corr: {}, open: new Set(), more: 0 } };
   c.rect = rectOf(fromEl); c.base = fullRect();
   renderDocBody();
   scroll.addEventListener('scroll', onDocScroll, { passive: true });
@@ -2507,6 +2516,7 @@ function onDocScroll() {
     c.coverWrap.style.transform = `translateY(${y * 0.32}px) scale(${1 - 0.3 * t})`;
     c.coverWrap.style.opacity = String(1 - clamp((t - 0.5) / 0.45, 0, 1));
     c.bar.classList.toggle('show', t >= 0.97);
+    docChrome(c);
   });
 }
 /* Fermeture par geste : glisser vers le bas depuis le haut, ou depuis le bord gauche ; suit le doigt, interruptible */
@@ -2581,13 +2591,16 @@ function renderDocBody() {
   if (!tabs.some(t => t[0] === c.tab)) c.tab = tabs[0][0];
   const sheetPending = d.status && (d.status.sheet === 'pending' || d.status.sheet === 'reading');
   const top = c.scroll.scrollTop;
+  c.sel = null;
+  /* Barre « maîtrise · parties · options » : reste collée en haut pendant la lecture */
+  c.info = h('div', { class: 'dv-info' },
+    h('span', { class: 'prog', title: x.total ? x.pct + ' % des cartes maîtrisées' : 'Pas encore de cartes' }, progRing(x.pct), x.total ? h('span', null, x.pct + ' %', h('span', { class: 'lbl-long' }, ' maîtrisé')) : h('span', { class: 'lbl-long' }, 'Pas encore de cartes')),
+    secs.length > 1 && c.tab === 'sheet' ? chapterSel(c, secs) : null,
+    h('button', { class: 'pill-btn opt', 'aria-label': 'Options du document', title: 'Options', onclick: e => { const r = e.currentTarget.getBoundingClientRect(); docOptions(d, r.left, r.bottom + 6); } }, icon('more'), h('span', { class: 'lbl-long' }, 'Options')));
   c.body.replaceChildren(
     h('h1', { class: 'dv-title' }, d.title),
     h('div', { class: 'dv-sub' }, [themeName(d.themeId), kindLabel(d), fmtDate(d.createdAt), d.folder].filter(Boolean).join(' · ')),
-    h('div', { class: 'dv-info' },
-      h('span', { class: 'prog' }, progRing(x.pct), x.total ? x.pct + ' % maîtrisé' : 'Pas encore de cartes'),
-      secs.length > 1 && c.tab === 'sheet' ? chapterSel(c, secs) : null,
-      h('button', { class: 'pill-btn', 'aria-label': 'Options du document', onclick: e => { const r = e.currentTarget.getBoundingClientRect(); docOptions(d, r.left, r.bottom + 6); } }, icon('more'), 'Options')),
+    c.info,
     h('h2', { class: 'sec-h' }, 'À propos'),
     d.about ? h('p', { class: 'about' }, d.about) : sheetPending ? h('div', null, h('div', { class: 'skel', style: 'width:96%' }), h('div', { class: 'skel', style: 'width:72%' })) : h('p', { class: 'about muted' }, d.kind === 'phrases' ? 'Les phrases que tu as gardées pendant tes séances de perroquet, à réviser en cartes recto (français) / verso.' : 'Pas encore de résumé.'),
     d.kind !== 'phrases' ? h('div', { class: 'guide-box' },
@@ -2597,14 +2610,51 @@ function renderDocBody() {
     h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([id, label, ic]) => h('button', { class: 'tab', role: 'tab', 'aria-selected': String(c.tab === id), onclick: () => { c.tab = id; renderDocBody(); } }, icon(ic), label, id === 'cards' && x.total ? ' ' + x.total : ''))),
     h('div', { class: 'tab-body', role: 'tabpanel' }, renderTab(d, c)));
   c.scroll.scrollTop = top;
+  c.stickTop = parseFloat(getComputedStyle(c.info).top) || 74;
+  docChrome(c);
   renderCta(d, c);
 }
+/* Parties de la fiche : précédente / sommaire / suivante */
 function chapterSel(c, secs) {
-  const go = i => { c.chapter = clamp(i, 0, secs.length - 1); const lab = $('.pill-sel span', c.body); if (lab) lab.textContent = 'Partie ' + (c.chapter + 1) + ' sur ' + secs.length; $$('.pill-sel button', c.body).forEach((b, k) => b.disabled = k === 0 ? c.chapter === 0 : c.chapter === secs.length - 1); const el = $('#sec-' + c.chapter, c.body); if (el) c.scroll.scrollTo({ top: el.offsetTop + c.body.offsetTop - 80, behavior: reduced() ? 'auto' : 'smooth' }); };
-  return h('span', { class: 'pill-sel', role: 'group', 'aria-label': 'Parties de la fiche' },
-    h('button', { 'aria-label': 'Partie précédente', disabled: c.chapter === 0, onclick: () => go(c.chapter - 1) }, icon('minus')),
-    h('span', null, 'Partie ' + (c.chapter + 1) + ' sur ' + secs.length),
-    h('button', { 'aria-label': 'Partie suivante', disabled: c.chapter === secs.length - 1, onclick: () => go(c.chapter + 1) }, icon('plus')));
+  const n = secs.length, lab = h('span', { class: 'pt-lab' });
+  const prev = h('button', { 'aria-label': 'Partie précédente', title: 'Partie précédente', onclick: () => jumpChapter(c, c.chapter - 1) }, icon('back'));
+  const next = h('button', { 'aria-label': 'Partie suivante', title: 'Partie suivante', onclick: () => jumpChapter(c, c.chapter + 1) }, icon('next'));
+  const toc = h('button', { class: 'pt-toc', 'aria-label': 'Sommaire de la fiche', 'aria-haspopup': 'menu', title: 'Aller à une partie',
+    onclick: e => { const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 6, secs.map((s, i) => ({ label: (i + 1) + '. ' + s.title, icon: i === c.chapter ? 'check' : 'list', run: () => jumpChapter(c, i) }))); } }, lab, icon('down'));
+  c.sel = { lab, prev, next, n };
+  setChapterUI(c, c.chapter);
+  return h('span', { class: 'pill-sel', role: 'group', 'aria-label': 'Parties de la fiche' }, prev, toc, next);
+}
+function setChapterUI(c, i) {
+  c.chapter = i; const s = c.sel; if (!s) return;
+  s.lab.replaceChildren('Partie ' + (i + 1), h('span', { class: 'pt-long' }, ' sur ' + s.n), h('span', { class: 'pt-short' }, '/' + s.n));
+  s.prev.disabled = i === 0; s.next.disabled = i === s.n - 1;
+}
+function jumpChapter(c, i) {
+  if (!c.sel) return;
+  i = clamp(i, 0, c.sel.n - 1); setChapterUI(c, i); c.jumped = i;
+  const el = document.getElementById('sec-' + i); if (!el) return;
+  const top = el.getBoundingClientRect().top - c.scroll.getBoundingClientRect().top + c.scroll.scrollTop - (c.stickTop + c.info.offsetHeight + 14);
+  c.jumpUntil = Date.now() + (reduced() ? 120 : 900);
+  c.scroll.scrollTo({ top: Math.max(0, top), behavior: reduced() ? 'auto' : 'smooth' });
+  el.setAttribute('tabindex', '-1'); el.focus({ preventScroll: true });
+}
+/* Pendant le défilement : barre collée (fond et ombre) et numéro de la partie en cours de lecture */
+function docChrome(c) {
+  const info = c.info; if (!info || !info.isConnected) return;
+  const sr = c.scroll.getBoundingClientRect();
+  const stuck = c.scroll.scrollTop > 0 && info.getBoundingClientRect().top - sr.top <= c.stickTop + 1;
+  info.classList.toggle('stuck', stuck);
+  if (stuck !== c.root.classList.contains('info-stuck')) { c.root.classList.toggle('info-stuck', stuck); c.shade.style.right = (c.scroll.offsetWidth - c.scroll.clientWidth) + 'px'; }
+  if (!c.sel || c.tab !== 'sheet' || Date.now() < (c.jumpUntil || 0)) return;
+  const line = sr.top + c.stickTop + info.offsetHeight + 40;
+  let i = 0;
+  for (let k = 0; k < c.sel.n; k++) { const el = document.getElementById('sec-' + k); if (el && el.getBoundingClientRect().top <= line) i = k; else break; }
+  if (c.scroll.scrollTop + c.scroll.clientHeight >= c.scroll.scrollHeight - 4) {
+    const j = c.jumped, jel = j != null && document.getElementById('sec-' + j);
+    i = jel && j > i && jel.getBoundingClientRect().top < sr.bottom ? j : c.sel.n - 1; // tout en bas : dernière partie, sauf si on vient d'en choisir une visible
+  } else c.jumped = null;
+  if (i !== c.chapter) setChapterUI(c, i);
 }
 function renderCta(d, c) {
   const x = deckStats(d.id), n = x.due + Math.min(x.nNew, newLeft());
